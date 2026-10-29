@@ -1,0 +1,23 @@
+# RESPONSABILIDADE: Listar as dependências Python do projeto para instalação reproduzível com pip.
+# DICA DE PESQUISA: pesquise "pip install -r requirements.txt".
+
+# Base do curso (versões fixadas pelo material)
+langchain==0.3.27
+langchain-postgres==0.0.15
+
+# Loader do PDF e divisão do texto
+langchain-community
+pypdf
+
+# Integrações dos provedores de embeddings e LLM
+langchain-openai
+langchain-google-genai
+
+# Driver do PostgreSQL (psycopg 3)
+psycopg[binary]
+
+# Necessário para o SQLAlchemy assíncrono usado pelo langchain-postgres
+greenlet
+
+# Leitura de variáveis de ambiente a partir do arquivo .env
+python-dotenv

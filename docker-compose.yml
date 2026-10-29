@@ -1,0 +1,2 @@
+# RESPONSABILIDADE: Subir o PostgreSQL com a extensão pgvector e executar o bootstrap da extensão vector de forma reproduzível.
+# DICA DE PESQUISA: pesquise "Docker Compose PostgreSQL pgvector".

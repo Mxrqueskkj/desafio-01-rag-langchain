@@ -1,0 +1,6 @@
+# RESPONSABILIDADE: Impedir que segredos locais, o ambiente virtual e arquivos de cache sejam versionados no Git.
+# DICA DE PESQUISA: pesquise "gitignore padrão para Python".
+
+.env
+venv/
+__pycache__/
