@@ -1,9 +1,13 @@
 # RESPONSABILIDADE: Validar a configuração e o PDF, extrair o texto, dividir em chunks com metadados e persistir os vetores no PostgreSQL.
 # DICA DE PESQUISA: pesquise "LangChain PyPDFLoader" e "RecursiveCharacterTextSplitter".
 
+import hashlib
 from pathlib import Path
 
+from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sqlalchemy import create_engine, text
 
 from config import get_embeddings, get_vector_store, load_settings
 
@@ -33,7 +37,22 @@ def validate_environment() -> None:
         Pesquise "pathlib Path exists Python" e
         "SQLAlchemy create_engine test connection".
     """
-    raise NotImplementedError("a implementar")
+    settings = load_settings()
+    pdf = Path(settings.pdf_path)
+
+    if not pdf.exists():
+        raise FileNotFoundError(f"PDF não encontrado: {pdf.resolve()}")
+    if pdf.stat().st_size == 0:
+        raise ValueError("O PDF está vazio.")
+
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise RuntimeError(f"Não foi possível conectar ao PostgreSQL: {exc}") from exc
+    finally:
+        engine.dispose()
 
 
 def load_pdf(path: str | Path) -> list[Document]:
@@ -56,7 +75,15 @@ def load_pdf(path: str | Path) -> list[Document]:
     POR ONDE COMEÇAR:
         Pesquise "LangChain PyPDFLoader" e "PyPDFLoader mode page".
     """
-    raise NotImplementedError("a implementar")
+    loader = PyPDFLoader(str(path), mode="page")
+    pages = loader.load()
+
+    if not pages or not any(page.page_content.strip() for page in pages):
+        raise ValueError(
+            "O PDF não produziu texto. Ele pode ser escaneado (imagem) e precisar de OCR."
+        )
+
+    return pages
 
 
 def split_documents(pages: list[Document]) -> list[Document]:
@@ -79,7 +106,12 @@ def split_documents(pages: list[Document]) -> list[Document]:
     POR ONDE COMEÇAR:
         Pesquise "LangChain RecursiveCharacterTextSplitter".
     """
-    raise NotImplementedError("a implementar")
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        length_function=len,
+    )
+    return splitter.split_documents(pages)
 
 
 def add_metadata(chunks: list[Document]) -> list[Document]:
@@ -102,7 +134,18 @@ def add_metadata(chunks: list[Document]) -> list[Document]:
     POR ONDE COMEÇAR:
         Pesquise "LangChain Document metadata" e "hashlib sha256 Python".
     """
-    raise NotImplementedError("a implementar")
+    settings = load_settings()
+    pdf_path = Path(settings.pdf_path)
+    document_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+
+    for index, chunk in enumerate(chunks):
+        chunk.metadata["source"] = pdf_path.name
+        chunk.metadata["page"] = chunk.metadata.get("page", 0)
+        chunk.metadata["chunk_index"] = index
+        chunk.metadata["document_hash"] = document_hash
+        chunk.metadata["embedding_model"] = settings.embedding_model
+
+    return chunks
 
 
 def save_to_database(chunks: list[Document]) -> None:
@@ -126,7 +169,15 @@ def save_to_database(chunks: list[Document]) -> None:
         Pesquise "LangChain PGVector add_documents" e
         "langchain-postgres PGVector".
     """
-    raise NotImplementedError("a implementar")
+    if not chunks:
+        raise ValueError("Nenhum chunk para gravar.")
+
+    store = get_vector_store()
+    ids = [
+        f"{chunk.metadata['document_hash']}-{chunk.metadata['chunk_index']}"
+        for chunk in chunks
+    ]
+    store.add_documents(chunks, ids=ids)
 
 
 def ingest() -> dict[str, int]:
@@ -151,7 +202,17 @@ def ingest() -> dict[str, int]:
     POR ONDE COMEÇAR:
         Pesquise "Python função main" e "LangChain ingestão de documentos".
     """
-    raise NotImplementedError("a implementar")
+    validate_environment()
+    settings = load_settings()
+
+    pages = load_pdf(settings.pdf_path)
+    chunks = split_documents(pages)
+    chunks = add_metadata(chunks)
+    save_to_database(chunks)
+
+    resumo = {"pages": len(pages), "chunks": len(chunks)}
+    print(f"Ingestão concluída: {resumo['pages']} páginas, {resumo['chunks']} chunks.")
+    return resumo
 
 
 if __name__ == "__main__":

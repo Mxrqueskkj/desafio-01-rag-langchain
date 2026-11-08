@@ -1,2 +1,33 @@
 # RESPONSABILIDADE: Subir o PostgreSQL com a extensão pgvector e executar o bootstrap da extensão vector de forma reproduzível.
 # DICA DE PESQUISA: pesquise "Docker Compose PostgreSQL pgvector".
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: desafio01-postgres
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: rag
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  db-init:
+    image: pgvector/pgvector:pg17
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: rag
+    command: >
+      psql -h db -U rag -d rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+volumes:
+  postgres_data:

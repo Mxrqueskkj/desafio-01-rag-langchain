@@ -28,7 +28,11 @@ def search(query: str, k: int = TOP_K) -> list[tuple[Document, float]]:
         Pesquise "similarity_search_with_score LangChain" e
         "pgvector distância de cosseno".
     """
-    raise NotImplementedError("a implementar")
+    if not query or not query.strip():
+        return []
+
+    store = get_vector_store()
+    return store.similarity_search_with_score(query, k=k)
 
 
 def format_context(results: list[tuple[Document, float]]) -> str:
@@ -51,4 +55,17 @@ def format_context(results: list[tuple[Document, float]]) -> str:
     POR ONDE COMEÇAR:
         Pesquise "Python join strings" e "LangChain Document page_content".
     """
-    raise NotImplementedError("a implementar")
+    if not results:
+        return ""
+
+    partes = []
+    for indice, (doc, score) in enumerate(results, start=1):
+        source = doc.metadata.get("source", "documento")
+        page = doc.metadata.get("page")
+        pagina = f"página {int(page) + 1}" if isinstance(page, int) else "página ?"
+        partes.append(
+            f"[Trecho {indice} | {source} | {pagina} | score {score:.4f}]\n"
+            f"{doc.page_content}"
+        )
+
+    return "\n\n".join(partes)

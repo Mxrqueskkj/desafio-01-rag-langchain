@@ -1,10 +1,16 @@
 # RESPONSABILIDADE: Centralizar a leitura do ambiente, os nomes dos modelos, a conexão com o banco e o nome da collection usados pelos demais scripts.
 # DICA DE PESQUISA: pesquise "python-dotenv load_dotenv".
 
+import os
+
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
 from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStore
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_postgres import PGVector
 
 
 @dataclass
@@ -57,7 +63,39 @@ def load_settings() -> Settings:
     POR ONDE COMEÇAR:
         Pesquise "python-dotenv load_dotenv" e "os.getenv Python".
     """
-    raise NotImplementedError("a implementar")
+    load_dotenv()
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    collection_name = os.getenv("PG_VECTOR_COLLECTION_NAME", "").strip()
+    pdf_path = os.getenv("PDF_PATH", "").strip()
+    chat_model = os.getenv("CHAT_MODEL", "").strip()
+    embedding_model = os.getenv("EMBEDDING_MODEL", "").strip()
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+
+    obrigatorias = {
+        "DATABASE_URL": database_url,
+        "PG_VECTOR_COLLECTION_NAME": collection_name,
+        "PDF_PATH": pdf_path,
+        "CHAT_MODEL": chat_model,
+        "EMBEDDING_MODEL": embedding_model,
+    }
+    faltando = [nome for nome, valor in obrigatorias.items() if not valor]
+    if faltando:
+        raise ValueError("Preencha no .env: " + ", ".join(faltando))
+
+    if not openai_api_key and not google_api_key:
+        raise ValueError("Preencha OPENAI_API_KEY ou GOOGLE_API_KEY no .env")
+
+    return Settings(
+        database_url=database_url,
+        collection_name=collection_name,
+        pdf_path=pdf_path,
+        chat_model=chat_model,
+        embedding_model=embedding_model,
+        openai_api_key=openai_api_key,
+        google_api_key=google_api_key,
+    )
 
 
 def get_embeddings() -> Embeddings:
@@ -81,7 +119,21 @@ def get_embeddings() -> Embeddings:
         Pesquise "LangChain OpenAIEmbeddings" e
         "LangChain GoogleGenerativeAIEmbeddings".
     """
-    raise NotImplementedError("a implementar")
+    settings = load_settings()
+
+    if settings.openai_api_key:
+        return OpenAIEmbeddings(
+            model=settings.embedding_model,
+            api_key=settings.openai_api_key,
+        )
+
+    if settings.google_api_key:
+        return GoogleGenerativeAIEmbeddings(
+            model=settings.embedding_model,
+            google_api_key=settings.google_api_key,
+        )
+
+    raise ValueError("Nenhuma chave de embeddings configurada.")
 
 
 def get_vector_store() -> VectorStore:
@@ -105,4 +157,11 @@ def get_vector_store() -> VectorStore:
         Pesquise "langchain-postgres PGVector" e "PGVectorStore".
         O curso usa PGVector; a biblioteca atual recomenda PGVectorStore.
     """
-    raise NotImplementedError("a implementar")
+    settings = load_settings()
+
+    return PGVector(
+        embeddings=get_embeddings(),
+        connection=settings.database_url,
+        collection_name=settings.collection_name,
+        use_jsonb=True,
+    )

@@ -1,6 +1,9 @@
 # RESPONSABILIDADE: Manter o loop de perguntas no terminal, chamar a busca, montar o prompt com o contexto e exibir a resposta da LLM.
 # DICA DE PESQUISA: pesquise "LangChain PromptTemplate" e "Python loop input() no terminal".
 
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+
 from config import load_settings
 from search import format_context, search
 
@@ -28,7 +31,29 @@ def build_prompt(context: str, question: str) -> str:
     POR ONDE COMEÇAR:
         Pesquise "LangChain PromptTemplate" e "ChatPromptTemplate".
     """
-    raise NotImplementedError("a implementar")
+    return f"""CONTEXTO:
+{context}
+
+REGRAS:
+- Responda somente com base no CONTEXTO.
+- Se a informação não estiver explicitamente no CONTEXTO, responda:
+  "Não tenho informações necessárias para responder sua pergunta."
+- Nunca invente ou use conhecimento externo.
+- Nunca produza opiniões ou interpretações além do que está escrito.
+
+EXEMPLOS DE PERGUNTAS FORA DO CONTEXTO:
+Pergunta: "Qual é a capital da França?"
+Resposta: "Não tenho informações necessárias para responder sua pergunta."
+Pergunta: "Quantos clientes temos em 2024?"
+Resposta: "Não tenho informações necessárias para responder sua pergunta."
+Pergunta: "Você acha isso bom ou ruim?"
+Resposta: "Não tenho informações necessárias para responder sua pergunta."
+
+PERGUNTA DO USUÁRIO:
+{question}
+
+RESPONDA A "PERGUNTA DO USUÁRIO"
+"""
 
 
 def call_llm(prompt: str) -> str:
@@ -51,7 +76,26 @@ def call_llm(prompt: str) -> str:
         Pesquise "LangChain ChatOpenAI invoke" e
         "LangChain ChatGoogleGenerativeAI".
     """
-    raise NotImplementedError("a implementar")
+    settings = load_settings()
+
+    if settings.openai_api_key:
+        llm = ChatOpenAI(
+            model=settings.chat_model,
+            api_key=settings.openai_api_key,
+            temperature=0,
+        )
+    elif settings.google_api_key:
+        llm = ChatGoogleGenerativeAI(
+            model=settings.chat_model,
+            google_api_key=settings.google_api_key,
+            temperature=0,
+        )
+    else:
+        raise ValueError("Nenhuma chave de LLM configurada.")
+
+    resposta = llm.invoke(prompt)
+    conteudo = resposta.content
+    return conteudo if isinstance(conteudo, str) else str(conteudo)
 
 
 def answer(question: str) -> str:
@@ -75,7 +119,14 @@ def answer(question: str) -> str:
     POR ONDE COMEÇAR:
         Pesquise "LangChain RAG tutorial" e "retrieval augmented generation".
     """
-    raise NotImplementedError("a implementar")
+    resultados = search(question)
+
+    if not resultados:
+        return REFUSAL_MESSAGE
+
+    contexto = format_context(resultados)
+    prompt = build_prompt(contexto, question)
+    return call_llm(prompt)
 
 
 def run_chat() -> None:
@@ -101,7 +152,29 @@ def run_chat() -> None:
         Pesquise "Python loop input() no terminal" e
         "KeyboardInterrupt Python".
     """
-    raise NotImplementedError("a implementar")
+    print("Chat RAG. Digite 'sair' para encerrar.")
+
+    while True:
+        try:
+            pergunta = input("\nPergunta: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nAté logo!")
+            break
+
+        if not pergunta:
+            continue
+
+        if pergunta.lower() in {"sair", "exit", "quit"}:
+            print("Até logo!")
+            break
+
+        try:
+            resposta = answer(pergunta)
+        except Exception as exc:
+            print(f"Erro ao responder: {exc}")
+            continue
+
+        print(f"\nResposta: {resposta}")
 
 
 if __name__ == "__main__":
