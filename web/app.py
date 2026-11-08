@@ -27,7 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 
-from config import load_settings
+from config import get_vector_store, load_settings
 from ingest import (
     add_metadata,
     load_pdf,
@@ -79,6 +79,10 @@ def render_sidebar() -> None:
         if st.sidebar.button("Processar PDF (ingerir)"):
             process_pdf(st.session_state.pdf_path)
 
+    st.sidebar.divider()
+    if st.sidebar.button("Limpar base (trocar PDF)", type="secondary"):
+        clear_base()
+
     if st.session_state.ingested:
         st.sidebar.success("Base ingerida e pronta para perguntas.")
     else:
@@ -102,6 +106,25 @@ def process_pdf(pdf_path: str) -> None:
     except Exception as exc:  # noqa: BLE001
         st.session_state.ingested = False
         st.sidebar.error(f"Erro na ingestão: {exc}")
+
+
+def clear_base() -> None:
+    try:
+        store = get_vector_store()
+        store.delete_collection()
+        store.create_collection()
+        st.sidebar.success("Base limpa. Envie um novo PDF.")
+    except Exception as exc:  # noqa: BLE001
+        st.sidebar.error(f"Erro ao limpar a base: {exc}")
+    finally:
+        st.session_state.messages = []
+        st.session_state.ingested = False
+        st.session_state.pdf_path = None
+        if UPLOADED_PDF.exists():
+            try:
+                UPLOADED_PDF.unlink()
+            except OSError:
+                pass
 
 
 def render_chat() -> None:
