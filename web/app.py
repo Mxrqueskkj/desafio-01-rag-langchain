@@ -26,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
+from sqlalchemy import create_engine, text
 
 from config import get_vector_store, load_settings
 from ingest import (
@@ -42,17 +43,43 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 UPLOADED_PDF = UPLOAD_DIR / "uploaded.pdf"
 
 
+def base_tem_dados() -> bool:
+    """Verifica se a collection configurada já possui vetores."""
+    try:
+        settings = load_settings()
+        engine = create_engine(settings.database_url)
+        try:
+            with engine.connect() as conn:
+                total = conn.execute(
+                    text(
+                        "SELECT count(*) FROM langchain_pg_embedding e "
+                        "JOIN langchain_pg_collection c ON e.collection_id = c.uuid "
+                        "WHERE c.name = :nome"
+                    ),
+                    {"nome": settings.collection_name},
+                ).scalar_one()
+            return total > 0
+        finally:
+            engine.dispose()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def init_state() -> None:
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "pdf_path" not in st.session_state:
         st.session_state.pdf_path = None
     if "ingested" not in st.session_state:
-        st.session_state.ingested = False
+        st.session_state.ingested = base_tem_dados()
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = 0
 
 
 def render_sidebar() -> None:
     st.sidebar.title("Configuração")
+    if st.session_state.get("flash"):
+        st.sidebar.success(st.session_state.pop("flash"))
     try:
         settings = load_settings()
         st.sidebar.success("Configuração carregada")
@@ -69,13 +96,18 @@ def render_sidebar() -> None:
 
     st.sidebar.divider()
     st.sidebar.subheader("PDF")
-    uploaded = st.sidebar.file_uploader("Envie um PDF", type=["pdf"])
+    uploaded = st.sidebar.file_uploader(
+        "Envie um PDF",
+        type=["pdf"],
+        key=f"pdf_upload_{st.session_state.uploader_key}",
+    )
     if uploaded is not None:
         UPLOADED_PDF.write_bytes(uploaded.getvalue())
         st.session_state.pdf_path = str(UPLOADED_PDF)
         st.sidebar.success(f"PDF salvo: {UPLOADED_PDF.name}")
 
     if st.session_state.pdf_path:
+        st.sidebar.write(f"**PDF enviado:** {Path(st.session_state.pdf_path).name}")
         if st.sidebar.button("Processar PDF (ingerir)"):
             process_pdf(st.session_state.pdf_path)
 
@@ -91,6 +123,8 @@ def render_sidebar() -> None:
 
 def process_pdf(pdf_path: str) -> None:
     # Garante que a ingestão use o PDF enviado, mesmo com .env apontando para outro.
+    # O valor original é restaurado ao final para não vazar entre sessões.
+    pdf_path_original = os.environ.get("PDF_PATH")
     os.environ["PDF_PATH"] = pdf_path
     try:
         validate_environment()
@@ -106,6 +140,11 @@ def process_pdf(pdf_path: str) -> None:
     except Exception as exc:  # noqa: BLE001
         st.session_state.ingested = False
         st.sidebar.error(f"Erro na ingestão: {exc}")
+    finally:
+        if pdf_path_original is None:
+            os.environ.pop("PDF_PATH", None)
+        else:
+            os.environ["PDF_PATH"] = pdf_path_original
 
 
 def clear_base() -> None:
@@ -113,18 +152,25 @@ def clear_base() -> None:
         store = get_vector_store()
         store.delete_collection()
         store.create_collection()
-        st.sidebar.success("Base limpa. Envie um novo PDF.")
     except Exception as exc:  # noqa: BLE001
+        # Em caso de falha, mantém a base e o estado atuais.
         st.sidebar.error(f"Erro ao limpar a base: {exc}")
-    finally:
-        st.session_state.messages = []
-        st.session_state.ingested = False
-        st.session_state.pdf_path = None
-        if UPLOADED_PDF.exists():
-            try:
-                UPLOADED_PDF.unlink()
-            except OSError:
-                pass
+        return
+
+    st.session_state.messages = []
+    st.session_state.ingested = False
+    st.session_state.pdf_path = None
+    # Troca a chave do uploader para limpar o arquivo selecionado no widget.
+    st.session_state.uploader_key += 1
+    st.session_state.flash = "Base limpa. Envie um novo PDF."
+    if UPLOADED_PDF.exists():
+        try:
+            UPLOADED_PDF.unlink()
+        except OSError:
+            pass
+
+    # Recarrega a página para não exibir mensagens antigas do PDF anterior.
+    st.rerun()
 
 
 def render_chat() -> None:
